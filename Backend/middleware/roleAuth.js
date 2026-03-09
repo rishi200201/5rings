@@ -37,8 +37,6 @@ const checkApprovalStatus = (req, res, next) => {
   if (req.user.role === 'admin') {
     return next();
   }
-
-  // Check if other roles are approved
   if (!req.user.isApproved) {
     return res.status(403).json({
       success: false,

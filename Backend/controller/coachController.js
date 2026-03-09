@@ -1,5 +1,6 @@
 const Program = require('../models/program');
 const Enrollment = require('../models/enrollment');
+const serverError = require('../utils/serverError');
 
 // Create program (Coach only)
 exports.createProgram = async (req, res) => {
@@ -32,7 +33,7 @@ exports.getAllPrograms = async (req, res) => {
     
     res.json({ success: true, programs });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -48,7 +49,7 @@ exports.getProgram = async (req, res) => {
     
     res.json({ success: true, program });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -60,7 +61,7 @@ exports.getCoachPrograms = async (req, res) => {
     
     res.json({ success: true, programs });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -77,7 +78,8 @@ exports.updateProgram = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
     
-    Object.assign(program, req.body);
+    const ALLOWED_FIELDS = ['title', 'description', 'sport', 'level', 'duration', 'price', 'maxStudents', 'schedule', 'venue', 'images', 'features', 'isActive'];
+    ALLOWED_FIELDS.forEach((key) => { if (req.body[key] !== undefined) program[key] = req.body[key]; });
     await program.save();
     
     res.json({ success: true, program });
@@ -102,7 +104,7 @@ exports.deleteProgram = async (req, res) => {
     await program.deleteOne();
     res.json({ success: true, message: 'Program deleted successfully' });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -165,7 +167,7 @@ exports.getUserEnrollments = async (req, res) => {
     
     res.json({ success: true, enrollments });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -185,7 +187,7 @@ exports.getCoachEnrollments = async (req, res) => {
     
     res.json({ success: true, enrollments });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 

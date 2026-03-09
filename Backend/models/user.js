@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['user', 'admin', 'event_organizer', 'vendor', 'coach'],
+      enum: ['user', 'admin', 'event_organizer', 'vendor', 'kitchen', 'coach'],
       default: 'user',
     },
     phone: {
@@ -55,6 +55,11 @@ const userSchema = new mongoose.Schema({
         return this.role === 'user' ? true : false;
       }
     },
+    // Kitchen-only: assigned event/location
+    assignedEvent: {
+      type: require('mongoose').Schema.Types.ObjectId,
+      ref: 'Event',
+    },
     otp: {
       type: String,
       select: false,
@@ -76,6 +81,15 @@ const userSchema = new mongoose.Schema({
       licenseNumber: String,
       bio: String,
       rating: { type: Number, default: 0 },
+      isActive: { type: Boolean, default: true },
+      totalRevenue: { type: Number, default: 0 },
+      totalSold: { type: Number, default: 0 },
+    },
+    kitchenProfile: {
+      stationName: String,
+      location: String,
+      specialty: [String],
+      bio: String,
       isActive: { type: Boolean, default: true },
     },
     coachProfile: {

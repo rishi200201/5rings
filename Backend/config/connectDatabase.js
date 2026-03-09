@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 
 const connectDatabase = () => {
-    const DB_URI = process.env.MONGODB_URI || process.env.DB_LEARNING || 'mongodb://localhost:27017/learning';
+    const DB_URI = process.env.MONGODB_URI || process.env.DB_LEARNING;
+    if (!DB_URI) {
+      console.error('MONGODB_URI is not set. Please configure your .env file.');
+      process.exit(1);
+    }
     
     mongoose.connect(DB_URI)
     .then(con => {

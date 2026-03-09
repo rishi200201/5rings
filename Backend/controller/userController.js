@@ -1,4 +1,5 @@
 const User = require('../models/user');
+const serverError = require('../utils/serverError');
 
 // Add a new user
 const createUser = async (req, res) => {
@@ -24,7 +25,7 @@ const getUserById = async (req, res) => {
     }
     res.status(200).json(user);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 };
 
@@ -34,7 +35,7 @@ const getAllUsers = async (req, res) => {
     const users = await User.find();
     res.status(200).json(users);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 };
 

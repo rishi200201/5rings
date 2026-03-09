@@ -3,6 +3,7 @@ const Event = require('../models/event');
 const MenuItem = require('../models/menuItem');
 const Program = require('../models/program');
 const bcrypt = require('bcryptjs');
+const serverError = require('../utils/serverError');
 
 // Create special role user (Admin only)
 exports.createSpecialUser = async (req, res) => {
@@ -10,8 +11,8 @@ exports.createSpecialUser = async (req, res) => {
     const { name, email, password, role, phone, isVerified, isApproved, organizerProfile, vendorProfile, coachProfile } = req.body;
 
     // Only allow creating special roles
-    if (!['event_organizer', 'vendor', 'coach'].includes(role)) {
-      return res.status(400).json({ success: false, message: 'Invalid role. Can only create event_organizer, vendor, or coach' });
+    if (!['event_organizer', 'vendor', 'kitchen', 'coach'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role. Can only create event_organizer, vendor, kitchen, or coach' });
     }
 
     // Check if user already exists
@@ -35,7 +36,11 @@ exports.createSpecialUser = async (req, res) => {
       userData.organizerProfile = organizerProfile;
     }
     if (role === 'vendor' && vendorProfile) {
-      userData.vendorProfile = vendorProfile;
+      userData.vendorProfile = {  ...vendorProfile, totalRevenue: 0, totalSold: 0 };
+    }
+    if (role === 'kitchen') {
+      const { kitchenProfile } = req.body;
+      if (kitchenProfile) userData.kitchenProfile = kitchenProfile;
     }
     if (role === 'coach' && coachProfile) {
       userData.coachProfile = coachProfile;
@@ -68,8 +73,11 @@ exports.getDashboardStats = async (req, res) => {
     
     const pendingApprovals = await User.countDocuments({ 
       isApproved: false,
-      role: { $in: ['event_organizer', 'vendor', 'coach'] }
+      role: { $in: ['event_organizer', 'vendor', 'kitchen', 'coach'] }
     });
+
+    const totalKitchenStaff = await User.countDocuments({ role: 'kitchen' });
+    const totalVendors = await User.countDocuments({ role: 'vendor' });
     
     const stats = {
       totalUsers,
@@ -77,11 +85,13 @@ exports.getDashboardStats = async (req, res) => {
       totalMenuItems,
       totalPrograms,
       pendingApprovals,
+      totalKitchenStaff,
+      totalVendors,
     };
     
     res.json({ success: true, stats });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -97,7 +107,7 @@ exports.getAllUsers = async (req, res) => {
     const users = await User.find(filter).select('-password');
     res.json({ success: true, users });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -132,7 +142,7 @@ exports.deleteUser = async (req, res) => {
     await user.deleteOne();
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -150,6 +160,6 @@ exports.toggleEventFeatured = async (req, res) => {
     
     res.json({ success: true, event });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };

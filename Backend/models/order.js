@@ -9,12 +9,17 @@ const orderSchema = new mongoose.Schema({
   event: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Event',
-    required: true,
+    default: null,
   },
   vendor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
+  },
+  kitchen: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
   },
   items: [{
     menuItem: {
@@ -36,7 +41,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['placed', 'preparing', 'ready', 'delivered', 'cancelled'],
+    enum: ['placed', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'],
     default: 'placed',
   },
   specialInstructions: String,
@@ -44,6 +49,9 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  confirmedAt: Date,
+  preparedAt: Date,
+  readyAt: Date,
   deliveredAt: Date,
   rating: {
     food: Number,

@@ -5,7 +5,9 @@ const {
   validateRegistration, 
   validateLogin, 
   validateOTP, 
-  validateResendOTP 
+  validateResendOTP,
+  validateForgotPassword,
+  validateResetPassword,
 } = require('../middleware/validator');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimiter');
 
@@ -25,5 +27,12 @@ router.post('/login', authLimiter, validateLogin, authController.loginUser);
 
 // Route to get current user (protected route with JWT verification)
 router.get('/me', verifyToken, authController.getMe);
+
+// Route to logout (clears the auth cookie)
+router.post('/logout', verifyToken, authController.logoutUser);
+
+// Password reset routes (rate-limited per OTP limiter)
+router.post('/forgot-password', otpLimiter, validateForgotPassword, authController.forgotPassword);
+router.post('/reset-password', otpLimiter, validateResetPassword, authController.resetPassword);
 
 module.exports = router;

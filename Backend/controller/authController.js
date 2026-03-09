@@ -1,12 +1,39 @@
 const User = require('../models/user');
+const TokenBlacklist = require('../models/tokenBlacklist');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { sendOTPEmail, sendWelcomeEmail } = require('../utils/emailService');
+const serverError = require('../utils/serverError');
+const { hashToken } = require('../middleware/auth');
+
+// Parse a duration string such as '7d', '24h', '3600s' into milliseconds.
+// Falls back to 7 days if the format is unrecognised.
+const parseDuration = (dur) => {
+  const match = /^(\d+)([smhd])$/i.exec(dur || '7d');
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
+  const [, n, unit] = match;
+  const map = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+  return Number(n) * map[unit.toLowerCase()];
+};
 
 // Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d',
+  });
+};
+
+/**
+ * sendTokenCookie — sets the HttpOnly JWT cookie.
+ * Cookie maxAge is derived from JWT_EXPIRE so the two never drift apart.
+ */
+const sendTokenCookie = (res, token) => {
+  const maxAge = parseDuration(process.env.JWT_EXPIRE);
+  res.cookie('token', token, {
+    httpOnly: true,
+    maxAge,                                          // ms — auto-managed by browser
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
   });
 };
 
@@ -17,7 +44,7 @@ const generateOTP = () => {
 
 // Register a new user
 const registerUser = async (req, res) => {
-  const { name, email, password, age, dob, qualification, role, phone, address, organizerProfile, vendorProfile, coachProfile } = req.body;
+  const { name, email, password, age, dob, qualification, phone, address } = req.body;
 
   try {
     // Check if user already exists
@@ -44,21 +71,10 @@ const registerUser = async (req, res) => {
       otp,
       otpExpire,
       isVerified: false,
-      role: role || 'user',
+      role: 'user', // Always 'user'; admin creates other roles via the admin panel
       phone,
       address,
     };
-
-    // Add role-specific profiles if provided
-    if (role === 'event_organizer' && organizerProfile) {
-      userData.organizerProfile = organizerProfile;
-    }
-    if (role === 'vendor' && vendorProfile) {
-      userData.vendorProfile = vendorProfile;
-    }
-    if (role === 'coach' && coachProfile) {
-      userData.coachProfile = coachProfile;
-    }
 
     const user = await User.create(userData);
 
@@ -77,10 +93,7 @@ const registerUser = async (req, res) => {
       email: user.email,
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    serverError(res, err);
   }
 };
 
@@ -123,8 +136,11 @@ const verifyOTP = async (req, res) => {
       });
     }
 
-    // Verify OTP
-    if (user.otp !== otp) {
+    // Verify OTP — use timingSafeEqual to prevent timing attacks
+    const crypto = require('crypto');
+    const otpMatch = user.otp.length === otp.length &&
+      crypto.timingSafeEqual(Buffer.from(user.otp), Buffer.from(otp));
+    if (!otpMatch) {
       return res.status(400).json({ 
         success: false,
         message: 'Invalid OTP' 
@@ -147,10 +163,12 @@ const verifyOTP = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
+    // Set HttpOnly cookie — lifetime mirrors JWT_EXPIRE, inaccessible to JS
+    sendTokenCookie(res, token);
+
     res.status(200).json({
       success: true,
       message: 'Account verified successfully!',
-      token,
       user: {
         id: user._id,
         name: user.name,
@@ -159,10 +177,7 @@ const verifyOTP = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    serverError(res, err);
   }
 };
 
@@ -218,10 +233,7 @@ const resendOTP = async (req, res) => {
       message: 'New OTP sent to your email',
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    serverError(res, err);
   }
 };
 
@@ -280,10 +292,12 @@ const loginUser = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
+    // Set HttpOnly cookie — lifetime mirrors JWT_EXPIRE, inaccessible to JS
+    sendTokenCookie(res, token);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
-      token,
       user: {
         id: user._id,
         name: user.name,
@@ -294,10 +308,7 @@ const loginUser = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    serverError(res, err);
   }
 };
 
@@ -311,10 +322,126 @@ const getMe = async (req, res) => {
       user,
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
+    serverError(res, err);
+  }
+};
+
+// Logout user — revokes the token server-side then clears the auth cookie
+const logoutUser = async (req, res) => {
+  try {
+    const token = req.token; // attached by verifyToken middleware
+    const decoded = req.tokenDecoded;
+
+    if (token && decoded?.exp) {
+      // Persist the token hash in the blacklist until the JWT's own expiry
+      await TokenBlacklist.create({
+        tokenHash: hashToken(token),
+        expiresAt: new Date(decoded.exp * 1000), // decoded.exp is Unix seconds
+        revokedBy: req.user._id,
+      });
+    }
+  } catch (err) {
+    // Never block logout because of a blacklist write failure
+    console.error('Token blacklist write failed on logout:', err.message);
+  }
+
+  res.cookie('token', '', {
+    httpOnly: true,
+    expires: new Date(0),
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  });
+  res.status(200).json({ success: true, message: 'Logged out successfully' });
+};
+
+// Forgot password — sends a reset OTP to the registered email
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+
+    // Always return the same message to prevent user-enumeration attacks
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If that email is registered, a reset code has been sent.',
+      });
+    }
+
+    const otp = generateOTP();
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    user.otp = otp;
+    user.otpExpire = otpExpire;
+    await user.save();
+
+    try {
+      const { sendPasswordResetEmail } = require('../utils/emailService');
+      await sendPasswordResetEmail(email, user.name, otp);
+    } catch (emailError) {
+      console.error('Password reset email failed:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset email. Please try again.',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'If that email is registered, a reset code has been sent.',
     });
+  } catch (err) {
+    serverError(res, err);
+  }
+};
+
+// Reset password — verify OTP then persist new hashed password
+const resetPassword = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({ email }).select('+otp +otpExpire');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset code',
+      });
+    }
+
+    // Check expiry
+    if (!user.otpExpire || user.otpExpire < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset code has expired. Please request a new one.',
+      });
+    }
+
+    // Timing-safe comparison to prevent timing attacks
+    if (
+      !user.otp ||
+      user.otp.length !== otp.length ||
+      !crypto.timingSafeEqual(Buffer.from(user.otp), Buffer.from(otp))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reset code',
+      });
+    }
+
+    // The pre-save hook in user.js will hash the new password
+    user.password = newPassword;
+    user.otp = undefined;
+    user.otpExpire = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.',
+    });
+  } catch (err) {
+    serverError(res, err);
   }
 };
 
@@ -324,4 +451,7 @@ module.exports = {
   resendOTP,
   loginUser,
   getMe,
+  logoutUser,
+  forgotPassword,
+  resetPassword,
 };

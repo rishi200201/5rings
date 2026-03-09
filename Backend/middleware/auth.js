@@ -1,13 +1,21 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
+const TokenBlacklist = require('../models/tokenBlacklist');
 
-// Verify JWT token and protect routes
+/** Compute the SHA-256 hex digest of a raw JWT string */
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex');
+
+// Verify JWT token, check it has not been revoked, and protect routes
 const verifyToken = async (req, res, next) => {
   try {
     let token;
 
-    // Check if token exists in Authorization header
-    if (
+    // Check HttpOnly cookie first, then Authorization header (fallback for API clients)
+    if (req.cookies?.token) {
+      token = req.cookies.token;
+    } else if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
@@ -22,12 +30,20 @@ const verifyToken = async (req, res, next) => {
     }
 
     try {
-      // Verify token
+      // 1. Verify signature and expiry
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Check if user still exists
-      const user = await User.findById(decoded.id);
+      // 2. Check revocation blacklist (O(1) index lookup by hash)
+      const revoked = await TokenBlacklist.exists({ tokenHash: hashToken(token) });
+      if (revoked) {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has been revoked. Please log in again.',
+        });
+      }
 
+      // 3. Check if user still exists
+      const user = await User.findById(decoded.id);
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -35,7 +51,7 @@ const verifyToken = async (req, res, next) => {
         });
       }
 
-      // Check if user is verified
+      // 4. Check if user is verified
       if (!user.isVerified) {
         return res.status(401).json({
           success: false,
@@ -43,7 +59,9 @@ const verifyToken = async (req, res, next) => {
         });
       }
 
-      // Add user to request object
+      // Attach raw token so controllers can revoke it on logout
+      req.token = token;
+      req.tokenDecoded = decoded;
       req.user = user;
       next();
     } catch (error) {
@@ -60,4 +78,4 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-module.exports = { verifyToken };
+module.exports = { verifyToken, hashToken };

@@ -2,6 +2,7 @@ const Event = require('../models/event');
 const Venue = require('../models/venue');
 const Ticket = require('../models/ticket');
 const crypto = require('crypto');
+const serverError = require('../utils/serverError');
 
 // Create Event (Event Organizer only)
 exports.createEvent = async (req, res) => {
@@ -78,7 +79,7 @@ exports.getAllEvents = async (req, res) => {
     
     res.json({ success: true, events });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -96,7 +97,7 @@ exports.getEvent = async (req, res) => {
     
     res.json({ success: true, event });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -114,7 +115,8 @@ exports.updateEvent = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to update this event' });
     }
     
-    Object.assign(event, req.body);
+    const ALLOWED_FIELDS = ['title', 'description', 'sport', 'eventType', 'startDate', 'endDate', 'status', 'ticketCategories', 'enabledVendors', 'coaches', 'images'];
+    ALLOWED_FIELDS.forEach((key) => { if (req.body[key] !== undefined) event[key] = req.body[key]; });
     await event.save();
     
     res.json({ success: true, event });
@@ -139,7 +141,7 @@ exports.deleteEvent = async (req, res) => {
     await event.deleteOne();
     res.json({ success: true, message: 'Event deleted successfully' });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -197,7 +199,7 @@ exports.getUserTickets = async (req, res) => {
     
     res.json({ success: true, tickets });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };
 
@@ -210,6 +212,6 @@ exports.getOrganizerEvents = async (req, res) => {
     
     res.json({ success: true, events });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    serverError(res, error);
   }
 };

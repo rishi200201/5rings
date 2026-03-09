@@ -127,9 +127,67 @@ const validateResendOTP = (req, res, next) => {
   next();
 };
 
+// Validate forgot password request
+const validateForgotPassword = (req, res, next) => {
+  const { email } = req.body;
+  const errors = [];
+
+  if (!email) {
+    errors.push('Email is required');
+  } else if (!validateEmail(email)) {
+    errors.push('Please provide a valid email address');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors,
+    });
+  }
+
+  next();
+};
+
+// Validate reset password request
+const validateResetPassword = (req, res, next) => {
+  const { email, otp, newPassword } = req.body;
+  const errors = [];
+
+  if (!email) {
+    errors.push('Email is required');
+  } else if (!validateEmail(email)) {
+    errors.push('Please provide a valid email address');
+  }
+
+  if (!otp) {
+    errors.push('Reset code is required');
+  } else if (!/^\d{6}$/.test(otp)) {
+    errors.push('Reset code must be a 6-digit number');
+  }
+
+  if (!newPassword) {
+    errors.push('New password is required');
+  } else if (!validatePassword(newPassword)) {
+    errors.push('Password must be at least 6 characters long');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors,
+    });
+  }
+
+  next();
+};
+
 module.exports = {
   validateRegistration,
   validateLogin,
   validateOTP,
   validateResendOTP,
+  validateForgotPassword,
+  validateResetPassword,
 };

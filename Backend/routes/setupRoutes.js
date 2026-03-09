@@ -66,10 +66,8 @@ router.post('/setup-admin', async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    const message = process.env.NODE_ENV === 'production' ? 'Server error' : error.message;
+    res.status(500).json({ success: false, message });
   }
 });
 
@@ -82,10 +80,8 @@ router.get('/check-admin', async (req, res) => {
       adminExists: !!adminExists,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    const message = process.env.NODE_ENV === 'production' ? 'Server error' : error.message;
+    res.status(500).json({ success: false, message });
   }
 });
 
